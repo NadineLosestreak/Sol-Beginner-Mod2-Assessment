@@ -97,22 +97,31 @@ export default function App() {
    */
   const createSender = async () => {
     // create a new Keypair
+    const senderKeypair = new Keypair();
 
-
-    console.log('Sender account: ', senderKeypair!.publicKey.toString());
+    console.log('New Sender account: ', senderKeypair!.publicKey.toString());
     console.log('Airdropping 2 SOL to Sender Wallet');
 
     // save this new KeyPair into this state variable
-    setSenderKeypair(/*KeyPair here*/);
+    setSenderKeypair(senderKeypair);
 
     // request airdrop into this new account
-    
+    const senderAirDropSignature = await connection.requestAirdrop(
+      new PublicKey(senderKeypair.publicKey),
+      2 * LAMPORTS_PER_SOL
+    );
 
     const latestBlockHash = await connection.getLatestBlockhash();
 
     // now confirm the transaction
-
-    console.log('Wallet Balance: ' + (await connection.getBalance(senderKeypair!.publicKey)) / LAMPORTS_PER_SOL);
+    await connection.confirmTransaction({
+      blockhash: latestBlockHash.blockhash,
+      lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+      signature: senderAirDropSignature
+    });
+  
+    console.log("Airdrop completed for the Sender account");
+    console.log('Sender Wallet Balance: ' + (await connection.getBalance(senderKeypair!.publicKey)) / LAMPORTS_PER_SOL);
   }
 
   /**
@@ -127,9 +136,10 @@ export default function App() {
     if (solana) {
       try {
         // connect to phantom wallet and return response which includes the wallet public key
-
+        const response = await solana.connect();
+        console.log('Connected to reciever wallet account: ', response.publicKey.toString());
         // save the public key of the phantom wallet to the state variable
-        setReceiverPublicKey(/*PUBLIC KEY*/);
+        setReceiverPublicKey(response.publicKey);
       } catch (err) {
         console.log(err);
       }
@@ -144,14 +154,13 @@ export default function App() {
     // @ts-ignore
     const { solana } = window;
 
-    // checks if phantom wallet exists
     if (solana) {
       try {
         solana.disconnect();
         setReceiverPublicKey(undefined);
         console.log("wallet disconnected")
       } catch (err) {
-        console.log(err);
+        console.error(err);
       }
     }
   };
@@ -160,16 +169,31 @@ export default function App() {
    * @description transfer SOL from sender wallet to connected wallet.
    * This function is called when the Transfer SOL to Phantom Wallet button is clicked
    */
-  const transferSol = async () => {    
-    
-    // create a new transaction for the transfer
+  const transferSol = async () => {
+    if (!senderKeypair || !receiverPublicKey) {
+      console.error('Sender keypair or receiver public key missing');
+      return;
+    }
 
-    // send and confirm the transaction
+    try {
+      // Construct a transfer transaction
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: senderKeypair.publicKey,
+          toPubkey: receiverPublicKey,
+          lamports: LAMPORTS_PER_SOL,
+        })
+      );
+       // Sign and send the transaction
+       await sendAndConfirmTransaction(connection, transaction, [senderKeypair]);
 
-    console.log("transaction sent and confirmed");
-    console.log("Sender Balance: " + await connection.getBalance(senderKeypair!.publicKey) / LAMPORTS_PER_SOL);
-    console.log("Receiver Balance: " + await connection.getBalance(receiverPublicKey!) / LAMPORTS_PER_SOL);
-  };
+       console.log('Transaction sent and confirmed');
+       console.log('Sender Balance: ' + (await connection.getBalance(senderKeypair.publicKey)) / LAMPORTS_PER_SOL);
+       console.log('Receiver Balance: ' + (await connection.getBalance(receiverPublicKey)) / LAMPORTS_PER_SOL);
+     } catch (error) {
+       console.error('Error transferring SOL:', error);
+     }
+   };
 
   // HTML code for the app
   return (
